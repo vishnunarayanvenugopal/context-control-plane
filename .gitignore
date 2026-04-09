@@ -1,0 +1,14 @@
+.DS_Store
+.ccp/
+.pytest_cache/
+node_modules/
+output/
+runs-eval/
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+secrets.enc
+*.trace.json
