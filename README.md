@@ -1,47 +1,53 @@
 # Context Control Plane
 
-**Context Control Plane**, or **CCP**, is an open-source vendor-neutral control-plane kernel for **AI agents**, **MCP integrations**, and **governed tool execution**.
+**Context Control Plane (CCP)** is an open-source control-plane kernel for AI agents, MCP integrations, governed execution, secure secret handling, and traceable tool access.
 
-It gives humans and agents one small, stable layer for:
+It gives teams one small, reusable layer between **an agent that wants to act** and **a real system that should not be touched blindly**.
 
-- policy and approval checks
-- safe secret and connection handling
-- traceable execution
-- machine-readable CLI contracts
+If you want AI to call tools without turning policy, secrets, approvals, and auditability into a side quest, this is the layer.
 
-If you want AI to call tools without turning your laptop into a confidence-powered compliance incident, this is the lane.
+## Why CCP Exists
 
-## What CCP Solves
+Modern AI tool stacks tend to break in familiar ways:
 
-Modern AI tooling usually has the same problems:
+- access rules live in prompts, wrappers, or tribal knowledge
+- secrets leak into env vars, logs, stdout, or chat
+- MCP integrations are adopted faster than they are evaluated
+- approvals become inconsistent or hard to audit
+- after an agent acts, nobody can clearly explain what happened
 
-| Problem | What usually happens | What CCP does |
-| --- | --- | --- |
-| Tool access is inconsistent | every agent or script invents its own rules | one control surface for policy, approval, and execution |
-| Secrets leak too easily | tokens end up in env vars, logs, or chat | brokered secret handling and redaction-first output |
-| MCP integrations are hard to trust | a plugin can read, write, or phone home quietly | trust tier, sandbox posture, egress policy, and safe test reporting |
-| Approvals become a maze | multiple gates, unclear ownership, bad UX | one user-facing approval model |
-| Auditing is weak | logs are scattered and hard to explain | trace records with a compact execution timeline |
+CCP exists to make those concerns **explicit, inspectable, and reusable**.
+
+## What CCP Provides
+
+| Capability | What CCP does |
+| --- | --- |
+| Governed execution | evaluates access, mode, gateway policy, approvals, and secret posture before execution |
+| Secret-safe connections | resolves secret references through managed backends instead of pushing raw values into prompts or logs |
+| Approval receipts | binds one approval to one exact governed action |
+| MCP trust posture | models MCP servers, trust tier, sandbox posture, egress policy, and safe test reporting |
+| Traceability | records compact execution traces with sanitized output |
+| Machine-readable CLI | exposes deterministic JSON-first surfaces for scripts, wrappers, and future UIs |
 
 ## What CCP Is
 
 CCP is a **kernel**, not a full product bundle.
 
-That means it focuses on a small core:
+That means it focuses on a small reusable core:
 
-- **northbound surfaces** like CLI and future MCP/API interfaces
-- **governance** like gateway policy and approvals
-- **connection execution** with safe secret handling
-- **traceability** for governed actions
-- **resource loading** for configuration and policy
+- northbound surfaces like CLI and future MCP/API interfaces
+- governance like gateway policy and approvals
+- connection execution with safe secret handling
+- traceability for governed actions
+- resource loading for configuration and policy
 
 It does **not** require:
 
 - a mandatory UI
-- mandatory Vault
-- mandatory shell shims
+- a mandatory Vault deployment
 - company-specific context trees
 - one vendor's agent stack
+- a rewrite of your whole toolchain
 
 ## Architecture At A Glance
 
@@ -89,49 +95,134 @@ flowchart LR
   EXEC --> OTHER
 ```
 
-## How A Request Flows
+## How A Governed Action Flows
 
 ```mermaid
 sequenceDiagram
-  participant A as "Agent or User"
+  participant U as "User or Agent"
   participant CCP as "ccp"
-  participant P as "Policy + Safety"
-  participant X as "Adapter"
-  participant T as "Trace"
+  participant REG as "Resource Registry"
+  participant POL as "Policy + Secrets + Approval"
+  participant RUN as "Governed Execution"
+  participant SYS as "External System"
+  participant TR as "Trace"
 
-  A->>CCP: request
-  CCP->>P: evaluate access, mode, secrets, gateway
+  U->>CCP: request action
+  CCP->>REG: load resources
+  REG-->>CCP: resolved config
+  CCP->>POL: evaluate access, mode, gateway, secrets, approval
 
-  alt allowed
-    P-->>CCP: allow
-    CCP->>X: execute with brokered credentials
-    X-->>CCP: sanitized result
-    CCP->>T: record trace
-    CCP-->>A: result + trace id
+  alt denied
+    POL-->>CCP: deny
+    CCP-->>U: denied + reason + next step
   else approval required
-    P-->>CCP: approval_required
-    CCP-->>A: exact next step
-  else denied
-    P-->>CCP: denied
-    CCP-->>A: reason + next action
+    POL-->>CCP: approval_required
+    CCP-->>U: exact approval needed
+  else allowed
+    POL-->>CCP: allow
+    CCP->>RUN: build execution plan
+    RUN->>SYS: execute with governed credentials
+    SYS-->>RUN: result
+    RUN->>TR: write sanitized trace
+    RUN-->>U: result + trace id
   end
 ```
 
-## Current Capabilities
+## Example Use Case
 
-The packaged `ccp` CLI is intentionally compact and machine-readable.
+Imagine a team wants an AI agent to read from and write to an issue tracker.
 
-| Area | Commands |
-| --- | --- |
-| Discovery | `ccp capabilities`, `ccp resource kinds`, `ccp resource list`, `ccp resource get`, `ccp schema get`, `ccp version` |
-| Packs and validation | `ccp pack status`, `ccp validate`, `ccp doctor`, `ccp upgrade plan` |
-| Secrets | `ccp secret status`, `ccp secret explain`, `ccp secret set`, `ccp secret inspect`, `ccp secret delete` |
-| MCP governance | `ccp mcp list`, `ccp mcp test`, `ccp mcp add`, `ccp mcp disable` |
-| Gateway and policy | `ccp gateway status`, `ccp gateway explain` |
-| Connection safety | `ccp connection explain`, `ccp approval issue`, `ccp approval inspect` |
-| Execution and traces | `ccp exec plan`, `ccp exec run`, `ccp trace list`, `ccp trace get`, `ccp trace explain` |
+They do **not** want:
 
-All important commands support `--json`.
+- API tokens copied into prompts
+- write actions happening without review
+- each agent framework inventing its own access rules
+- post-incident debugging based on vibes and screenshots
+
+They define:
+
+- a `ConnectionProfile` for the issue tracker
+- a `SecretBackend` that resolves the token safely
+- a `GatewayPolicy` that allows reads but gates writes
+- an approval flow for sensitive operations
+
+Then the workflow becomes inspectable:
+
+```mermaid
+flowchart TD
+  A["Agent wants to comment on incident ticket"]
+  B["ConnectionProfile: issue-tracker"]
+  C["GatewayPolicy: read allowed, write gated"]
+  D["SecretBackend: token resolved safely"]
+  E{"Write action?"}
+  F["Allow governed execution"]
+  G["Require approval receipt"]
+  H["Human or system issues exact approval"]
+  I["ccp exec plan / exec run"]
+  J["Issue tracker API"]
+  K["TraceRecord with sanitized output"]
+
+  A --> B
+  B --> C
+  B --> D
+  C --> E
+  E -- "No" --> F
+  E -- "Yes" --> G
+  G --> H
+  H --> I
+  D --> I
+  I --> J
+  I --> K
+```
+
+The interaction then looks like this:
+
+```bash
+ccp connection explain \
+  --resource-dir ./resources \
+  --name issue-tracker \
+  --access write \
+  --mode materialize \
+  --operation "comment on incident ticket" \
+  --json
+```
+
+If approval is required, CCP says so explicitly.
+
+```bash
+ccp approval issue \
+  --resource-dir ./resources \
+  --name issue-tracker \
+  --access write \
+  --mode materialize \
+  --operation "comment on incident ticket" \
+  --approved-by "team-lead@example.com" \
+  --json
+```
+
+Then the action can be planned and executed through the governed path:
+
+```bash
+ccp exec plan \
+  --resource-dir ./resources \
+  --name issue-tracker \
+  --access write \
+  --mode materialize \
+  --operation "comment on incident ticket" \
+  --approval-receipt ./receipt.json \
+  --json
+```
+
+```bash
+ccp exec run \
+  --resource-dir ./resources \
+  --name issue-tracker \
+  --access write \
+  --mode materialize \
+  --operation "comment on incident ticket" \
+  --approval-receipt ./receipt.json \
+  --json
+```
 
 ## Quick Start
 
@@ -143,7 +234,7 @@ python3.11 -m pip install -e .
 ccp version --json
 ```
 
-### 2. Explore what the core supports
+### 2. Inspect what the core supports
 
 ```bash
 ccp capabilities --json
@@ -159,7 +250,7 @@ ccp mcp list --json
 ccp secret status --json
 ```
 
-### 4. Understand a governed action before running it
+### 4. Try a minimal governed connection
 
 ```bash
 tmp_dir="$(mktemp -d)"
@@ -192,84 +283,91 @@ ccp connection explain \
 rm -rf "$tmp_dir"
 ```
 
-Approval note: `ccp approval issue` requires an explicitly configured signer via `CCP_APPROVAL_SIGNING_KEY`, `CCP_APPROVAL_SIGNING_KEY_FILE`, or `CCP_APPROVAL_SIGNING_KEY_PATH`. The same signer configuration must be present later when `ccp exec plan` or `ccp exec run` verifies an approval receipt. CCP does not auto-create approval signers.
-
-### 5. Inspect traces after execution
+### 5. Inspect traces
 
 ```bash
 ccp trace list --json
 ccp trace explain --id TRACE_ID --json
 ```
 
-## Core Concepts
+Approval note:
+`ccp approval issue` requires an explicitly configured signer via `CCP_APPROVAL_SIGNING_KEY`, `CCP_APPROVAL_SIGNING_KEY_FILE`, or `CCP_APPROVAL_SIGNING_KEY_PATH`.
+The same signer configuration must be available later when receipts are verified by `ccp exec plan` or `ccp exec run`.
 
-| Concept | Meaning |
+## Core Resource Model
+
+| Resource | Purpose |
 | --- | --- |
-| `ConnectionProfile` | a governed outbound connection definition |
-| `SecretBackend` | where secret references are resolved safely |
+| `ConnectionProfile` | governed definition of how to reach an external system |
+| `SecretBackend` | where secret references are resolved from |
 | `GatewayPolicy` | allow, deny, or approval-required decision rules |
 | `McpServer` | a managed MCP definition |
-| `McpPolicy` | MCP trust, sandbox, egress, sanitization, and tool rules |
-| `ApprovalReceipt` | one exact approval for one governed action |
-| `TraceRecord` | sanitized execution trace |
+| `McpPolicy` | trust, sandbox, egress, sanitization, and tool rules for MCP |
+| `ApprovalReceipt` | exact approval for one requested governed action |
+| `TraceRecord` | sanitized record of what happened during execution |
+
+## Security Principles
+
+CCP is built around a few simple rules:
+
+- secrets should not be revealed to AI by default
+- policy should be enforced on the execution path, not only described in docs
+- approvals should be exact, inspectable, and bound to the requested action
+- trace output should be sanitized
+- integrations should be treated as untrusted until proven otherwise
+
+Boring security usually ages better than exciting security. The exciting kind tends to become an incident review with better typography.
+
+## Platform Support
+
+CCP is a portable Python kernel, but security posture is not identical on every platform yet.
+
+| Area | Status |
+| --- | --- |
+| Core resource model, CLI, approvals, traces | portable |
+| Secret handling | strongest on macOS, partial on Linux, limited on some other platforms |
+| MCP runtime enforcement | strongest on macOS today |
+| Non-macOS MCP posture | more observational / best-effort in parts |
+
+That difference is called out deliberately so the public contract stays honest.
+
+## Who This Is For
+
+CCP is a good fit if you are:
+
+- building AI agents that need governed access to tools or APIs
+- evaluating MCP servers with trust, egress, and execution posture in mind
+- creating downstream starter packs or integration layers on top of a reusable core
+- trying to make AI tool use more reviewable, auditable, and explainable
+
+CCP is probably not the right tool if you want:
+
+- a full end-user AI product out of the box
+- a mandatory UI
+- a workflow engine for every business process
+- a replacement for your existing secret manager
 
 ## Project Layout
 
 | Path | Role |
 | --- | --- |
 | `sdk/python/context_control_plane/kernel/` | contracts, registry, policy, approvals, execution, tracing |
-| `sdk/python/context_control_plane/adapters/` | southbound adapter interfaces and implementations |
-| `sdk/python/context_control_plane/surfaces/` | northbound surfaces such as the CLI |
-| `tests/` | focused contract and behavior tests |
-
-## Design Principles
-
-CCP is built around three product principles:
-
-| Principle | What it means in practice |
-| --- | --- |
-| **Simpler than expected** | one approval story, one resource model, compact commands |
-| **Safer than expected** | brokered secrets, redaction-first output, traceability, MCP trust posture |
-| **Easier to integrate than expected** | stable CLI contracts, resource-driven config, vendor-neutral core |
-
-## What CCP Is Not
-
-CCP is **not**:
-
-- a mandatory IDE plugin
-- a mandatory UI
-- a monolithic workflow product
-- a replacement for your secret manager
-- a requirement to rewrite your whole tool stack on day one
-
-It is meant to be the **small, reusable middle layer** between users or agents and real systems.
+| `sdk/python/context_control_plane/adapters/` | southbound adapter implementations |
+| `sdk/python/context_control_plane/surfaces/` | CLI and other user-facing surfaces |
+| `tests/` | focused behavior and contract tests |
 
 ## Current Status
 
-This project is usable, but still early.
+This project is usable and public, but still early.
 
 | Area | Status |
 | --- | --- |
 | Resource model and CLI contract | strong |
 | Governed execution and traces | strong |
 | Secret-safe execution | strong |
-| MCP trust and safe test posture | strong on macOS; observational elsewhere |
-| Full MCP invocation through core | still evolving |
-| Zero-config onboarding | improving, with inline examples for now |
-
-That is deliberate. The kernel is being built to be trustworthy first and flashy second. The second one gets more tweets, but the first one survives contact with reality.
-
-## Why The Name Matters
-
-The project is called **Context Control Plane** because the goal is not just configuration. The goal is to control:
-
-- what context is in scope
-- what actions are allowed
-- what secrets can be used
-- what traces are kept
-- what agents and tools can safely do
-
-In other words: context without control becomes drift, and control without context becomes bureaucracy. CCP tries to avoid both, which is one of those rare moments in software where we aim for fewer fires instead of more dashboards.
+| Approval boundary model | strong |
+| MCP trust posture | useful, with macOS-first enforcement strength |
+| Full downstream ecosystem and starter packs | still evolving |
 
 ## Contributing
 
@@ -277,11 +375,8 @@ The public core should stay:
 
 - generic
 - vendor-neutral
-- easy to reason about
-- strict about security boundaries
+- security-conscious
+- explicit about contracts
+- small enough to reason about
 
-If a change feels product-specific, tenant-specific, or workflow-heavy, it probably belongs in a downstream pack or integration layer instead of the kernel.
-
-## License
-
-This project is licensed under **Apache License 2.0**. See `LICENSE`.
+If a change feels tenant-specific, workflow-heavy, or product-specific, it probably belongs in a downstream integration layer rather than the kernel.
