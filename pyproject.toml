@@ -27,7 +27,6 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Intended Audience :: Developers",
-  "Operating System :: OS Independent",
   "Topic :: Security",
   "Topic :: Software Development :: Libraries :: Python Modules"
 ]

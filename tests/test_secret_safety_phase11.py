@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -58,6 +59,7 @@ def _write_connection_profile(
     allowed_modes: list[str] | None = None,
     approval: dict | None = None,
     secret_backend_ref: str | None = None,
+    secret_refs: list[str] | None = None,
     output_policy: dict | None = None,
     materialization: dict | None = None,
 ) -> Path:
@@ -75,6 +77,8 @@ def _write_connection_profile(
         spec["approval"] = approval
     if secret_backend_ref is not None:
         spec["secretBackendRef"] = secret_backend_ref
+    if secret_refs is not None:
+        spec["secretRefs"] = secret_refs
     if output_policy is not None:
         spec["outputPolicy"] = output_policy
     if materialization is not None:
@@ -94,6 +98,9 @@ def _write_connection_profile(
 
 
 class SecretSafetyPhaseElevenTests(unittest.TestCase):
+    def _approval_env(self) -> unittest.mock._patch_dict:
+        return unittest.mock.patch.dict(os.environ, {"CCP_APPROVAL_SIGNING_KEY": "phase-eleven-test-key"}, clear=False)
+
     def test_connection_explain_resolves_secret_backend_and_materialization_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -154,44 +161,45 @@ class SecretSafetyPhaseElevenTests(unittest.TestCase):
             )
             receipt_path = root / "receipt.json"
 
-            issue_exit, _, issue_stderr = _run_discovery(
-                "approval",
-                "issue",
-                "--resource-dir",
-                str(root),
-                "--name",
-                "tracker-writer",
-                "--access",
-                "write",
-                "--mode",
-                "materialize",
-                "--operation",
-                "comment on ticket",
-                "--approved-by",
-                "leader@example.com",
-                "--output",
-                str(receipt_path),
-                "--json",
-            )
-            self.assertEqual(issue_exit, 0, msg=issue_stderr)
+            with self._approval_env():
+                issue_exit, _, issue_stderr = _run_discovery(
+                    "approval",
+                    "issue",
+                    "--resource-dir",
+                    str(root),
+                    "--name",
+                    "tracker-writer",
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "comment on ticket",
+                    "--approved-by",
+                    "leader@example.com",
+                    "--output",
+                    str(receipt_path),
+                    "--json",
+                )
+                self.assertEqual(issue_exit, 0, msg=issue_stderr)
 
-            exit_code, stdout, stderr = _run_discovery(
-                "exec",
-                "plan",
-                "--resource-dir",
-                str(root),
-                "--name",
-                "tracker-writer",
-                "--access",
-                "write",
-                "--mode",
-                "materialize",
-                "--operation",
-                "comment on ticket",
-                "--approval-receipt",
-                str(receipt_path),
-                "--json",
-            )
+                exit_code, stdout, stderr = _run_discovery(
+                    "exec",
+                    "plan",
+                    "--resource-dir",
+                    str(root),
+                    "--name",
+                    "tracker-writer",
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "comment on ticket",
+                    "--approval-receipt",
+                    str(receipt_path),
+                    "--json",
+                )
 
         self.assertEqual(exit_code, 0, msg=stderr)
         payload = json.loads(stdout)
@@ -202,6 +210,43 @@ class SecretSafetyPhaseElevenTests(unittest.TestCase):
         self.assertEqual(plan["materialization"]["delivery"], "temp-file")
         self.assertEqual(plan["materializationLease"]["delivery"], "temp-file")
         self.assertTrue(plan["materializationLease"]["leaseId"].startswith("mtl_"))
+
+    def test_connection_explain_rejects_invalid_secret_ref_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            _write_secret_backend(root, name="team-vault", backend_type="vault", durability="service-persistent")
+            _write_connection_profile(
+                root,
+                name="tracker-writer",
+                classification="confidential",
+                allowed_access=["read", "write"],
+                allowed_modes=["connect", "materialize"],
+                secret_backend_ref="team-vault",
+                secret_refs=["../escape"],
+                materialization={"delivery": "temp-file", "ttlSeconds": 90},
+            )
+
+            exit_code, stdout, stderr = _run_discovery(
+                "connection",
+                "explain",
+                "--resource-dir",
+                str(root),
+                "--name",
+                "tracker-writer",
+                "--access",
+                "read",
+                "--mode",
+                "connect",
+                "--operation",
+                "inspect policy",
+                "--json",
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stderr, "")
+        payload = json.loads(stdout)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("secretRefs[0]", payload["reason"])
 
     def test_exec_run_applies_allowlist_and_secret_detectors_before_ai_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -8,7 +8,7 @@ from ..adapters import (
     store_secret_value,
 )
 from .resource_registry import ResourceRegistry
-from .secrets import SecretBackendProfile, SecretConfigurationError
+from .secrets import SecretBackendProfile, SecretConfigurationError, normalize_secret_ref
 
 
 def resolve_secret_backend_profile(
@@ -64,8 +64,6 @@ def resolve_secret_bindings(
 ) -> dict[str, str]:
     bindings: dict[str, str] = {}
     for secret_ref in secret_refs:
-        ref_name = str(secret_ref or "").strip()
-        if not ref_name:
-            continue
+        ref_name = normalize_secret_ref(secret_ref, field_name="secret_ref")
         bindings[ref_name] = read_secret_value(backend, ref_name)
     return bindings

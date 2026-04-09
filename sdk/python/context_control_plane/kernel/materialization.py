@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
-from .secrets import MaterializationLease
+from .secrets import MaterializationLease, normalize_secret_ref
 
 
 def _materialization_root(base_dir: str = "") -> Path:
@@ -68,10 +68,11 @@ def prepare_materialization_bundle(
     secret_files: dict[str, str] = {}
     if lease.delivery == "temp-file":
         for secret_ref, value in secret_bindings.items():
-            file_path = bundle_root / f"{secret_ref}.secret"
+            safe_secret_ref = normalize_secret_ref(secret_ref, field_name="secret_ref")
+            file_path = bundle_root / f"{safe_secret_ref}.secret"
             file_path.write_text(str(value), encoding="utf-8")
             os.chmod(file_path, 0o600)
-            secret_files[str(secret_ref)] = str(file_path)
+            secret_files[safe_secret_ref] = str(file_path)
 
     metadata_path = bundle_root / "lease.json"
     metadata_path.write_text(

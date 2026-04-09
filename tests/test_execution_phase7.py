@@ -70,6 +70,18 @@ class ExecutionPhaseSevenTests(unittest.TestCase):
     def _approval_env(self) -> mock._patch_dict:
         return mock.patch.dict(os.environ, {"CCP_APPROVAL_SIGNING_KEY": "phase-seven-test-key"}, clear=False)
 
+    def _approval_env_unset(self) -> mock._patch_dict:
+        return mock.patch.dict(
+            os.environ,
+            {
+                "CCP_APPROVAL_SIGNING_KEY": "",
+                "CCP_APPROVAL_SIGNING_KEY_FILE": "",
+                "CCP_APPROVAL_SIGNING_KEY_PATH": "",
+                "CCP_APPROVAL_SIGNING_ISSUER": "",
+            },
+            clear=False,
+        )
+
     def test_approval_issue_emits_receipt_and_can_save_to_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -133,6 +145,41 @@ class ExecutionPhaseSevenTests(unittest.TestCase):
         payload = json.loads(stdout)
         self.assertEqual(payload["status"], "error")
         self.assertIn("approval is not required", payload["reason"])
+
+    def test_approval_issue_requires_explicit_signer_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            connection_path = _write_connection_profile(
+                root,
+                name="tracker-writer",
+                classification="confidential",
+                allowed_access=["read", "write"],
+                allowed_modes=["connect", "materialize"],
+                approval={"requiredForAccess": ["write"]},
+            )
+
+            with self._approval_env_unset():
+                exit_code, stdout, stderr = _run_discovery(
+                    "approval",
+                    "issue",
+                    "--resource",
+                    str(connection_path),
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "comment on ticket",
+                    "--approved-by",
+                    "leader@example.com",
+                    "--json",
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stderr, "")
+        payload = json.loads(stdout)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("approval signing key is not configured", payload["reason"])
 
     def test_exec_plan_safe_read_only_path_returns_brokered_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

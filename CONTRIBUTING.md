@@ -24,8 +24,9 @@ If a change feels product-specific, tenant-specific, workflow-heavy, or tied to 
 ## Local Workflow
 
 ```bash
-python3 -m pip install -e .[dev]
-python3 -m unittest
+python3.11 -m pip install --upgrade pip
+python3.11 -m pip install -e .[dev]
+python3.11 -m unittest
 ```
 
 Use targeted tests while iterating, then run the full public-core suite before opening a change.

@@ -1152,12 +1152,18 @@ def build_approval_issue_payload(args: argparse.Namespace, active_registry: InMe
         if args.output:
             saved_path = save_approval_receipt_file(receipt, args.output)
     except ValueError as exc:
+        description = "Re-run approval issuance with valid parameters."
+        if "approval signing key" in str(exc):
+            description = (
+                "Configure CCP_APPROVAL_SIGNING_KEY, CCP_APPROVAL_SIGNING_KEY_FILE, or "
+                "CCP_APPROVAL_SIGNING_KEY_PATH, then re-run approval issuance."
+            )
         return CommandEnvelope(
             status=CommandStatus.ERROR,
             reason=str(exc),
             next_action=NextAction(
                 command="ccp approval issue --json",
-                description="Re-run approval issuance with valid parameters.",
+                description=description,
             ),
             resource_refs=connection_resource_ref(document),
         )

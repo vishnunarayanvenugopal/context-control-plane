@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "sdk" / "python"))
@@ -59,6 +61,9 @@ def _write_connection_profile(
 
 
 class ExecRunPhaseEightTests(unittest.TestCase):
+    def _approval_env(self) -> mock._patch_dict:
+        return mock.patch.dict(os.environ, {"CCP_APPROVAL_SIGNING_KEY": "phase-eight-test-key"}, clear=False)
+
     def test_exec_run_brokered_mock_adapter_returns_sanitized_output_and_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -156,41 +161,42 @@ class ExecRunPhaseEightTests(unittest.TestCase):
             )
             receipt_path = root / "receipt.json"
 
-            issue_exit, issue_stdout, issue_stderr = _run_discovery(
-                "approval",
-                "issue",
-                "--resource",
-                str(connection_path),
-                "--access",
-                "write",
-                "--mode",
-                "materialize",
-                "--operation",
-                "update repository",
-                "--approved-by",
-                "leader@example.com",
-                "--output",
-                str(receipt_path),
-                "--json",
-            )
-            self.assertEqual(issue_exit, 0, msg=issue_stderr)
-            self.assertTrue(receipt_path.exists())
+            with self._approval_env():
+                issue_exit, issue_stdout, issue_stderr = _run_discovery(
+                    "approval",
+                    "issue",
+                    "--resource",
+                    str(connection_path),
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "update repository",
+                    "--approved-by",
+                    "leader@example.com",
+                    "--output",
+                    str(receipt_path),
+                    "--json",
+                )
+                self.assertEqual(issue_exit, 0, msg=issue_stderr)
+                self.assertTrue(receipt_path.exists())
 
-            exit_code, stdout, stderr = _run_discovery(
-                "exec",
-                "run",
-                "--resource",
-                str(connection_path),
-                "--access",
-                "write",
-                "--mode",
-                "materialize",
-                "--operation",
-                "update repository",
-                "--approval-receipt",
-                str(receipt_path),
-                "--json",
-            )
+                exit_code, stdout, stderr = _run_discovery(
+                    "exec",
+                    "run",
+                    "--resource",
+                    str(connection_path),
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "update repository",
+                    "--approval-receipt",
+                    str(receipt_path),
+                    "--json",
+                )
 
         self.assertEqual(exit_code, 0, msg=stderr)
         payload = json.loads(stdout)

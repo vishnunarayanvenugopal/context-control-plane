@@ -350,7 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
     approval_subparsers = approval_parser.add_subparsers(dest="approval_command", required=True)
     approval_issue_parser = approval_subparsers.add_parser(
         "issue",
-        help="Issue a local approval receipt for one exact governed action.",
+        help="Issue an approval receipt for one exact governed action using an explicitly configured signer.",
         parents=[_JSON_ARG],
     )
     _add_connection_input_args(approval_issue_parser)

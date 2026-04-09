@@ -32,6 +32,7 @@ _SECRET_VALUE_PATTERNS = (
     re.compile(r"\bBearer\s+[A-Za-z0-9._\-]{12,}\b", re.IGNORECASE),
     re.compile(r"\beyJ[A-Za-z0-9_\-]+?\.[A-Za-z0-9._\-]+?\.[A-Za-z0-9._\-]+\b"),
 )
+_SECRET_REF_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 _SAFE_SECRET_METADATA_KEYS = frozenset({"secretrefcount", "secretrefnames", "secretrefs"})
 
@@ -69,6 +70,17 @@ def _string_list(value: Any) -> tuple[str, ...]:
     else:
         raise SecretConfigurationError("expected a string or array of strings")
     return tuple(item for item in values if item)
+
+
+def normalize_secret_ref(value: Any, *, field_name: str = "secretRef") -> str:
+    ref = str(value or "").strip()
+    if not ref:
+        raise SecretConfigurationError(f"{field_name} requires a non-empty string")
+    if not _SECRET_REF_PATTERN.fullmatch(ref):
+        raise SecretConfigurationError(
+            f"{field_name} {ref!r} is invalid; use only letters, numbers, dot, underscore, or dash"
+        )
+    return ref
 
 
 def _mapping(value: Any, *, field_name: str) -> Mapping[str, Any]:
@@ -303,11 +315,14 @@ def resolve_connection_secret_controls(
 ) -> ConnectionSecretControls:
     if document.identifier.kind != "ConnectionProfile":
         raise SecretConfigurationError(f"resource {document.identifier.name!r} is not a ConnectionProfile")
+    secret_refs: list[str] = []
+    for index, secret_ref in enumerate(_string_list(document.spec.get("secret_refs") or document.spec.get("secretRefs"))):
+        secret_refs.append(normalize_secret_ref(secret_ref, field_name=f"secretRefs[{index}]"))
     return ConnectionSecretControls(
         backend=_resolve_backend_ref(document, registry),
         response_allowlist=_resolve_response_allowlist(document),
         materialization=_resolve_materialization_policy(document),
-        secret_refs=_string_list(document.spec.get("secret_refs") or document.spec.get("secretRefs")),
+        secret_refs=tuple(secret_refs),
     )
 
 

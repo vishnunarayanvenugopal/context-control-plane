@@ -44,7 +44,7 @@ class CoreBoundaryPhaseFourTests(unittest.TestCase):
             self.assertFalse((REPO_ROOT / name).exists(), msg=f"{name} should not be present in the public repo")
 
     def test_repo_root_surface_is_small_and_public_facing(self) -> None:
-        entries = {path.name for path in REPO_ROOT.iterdir() if path.name not in {".git", ".ccp", "__pycache__"}}
+        entries = {path.name for path in REPO_ROOT.iterdir() if path.name not in {".git", ".ccp", "__pycache__", ".pytest_cache"}}
         self.assertEqual(
             entries,
             {

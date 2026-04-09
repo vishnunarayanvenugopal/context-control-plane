@@ -138,7 +138,8 @@ All important commands support `--json`.
 ### 1. Install locally
 
 ```bash
-python3 -m pip install -e .
+python3.11 -m pip install --upgrade pip
+python3.11 -m pip install -e .
 ccp version --json
 ```
 
@@ -161,14 +162,37 @@ ccp secret status --json
 ### 4. Understand a governed action before running it
 
 ```bash
+tmp_dir="$(mktemp -d)"
+cat > "$tmp_dir/demo-connection.json" <<'JSON'
+{
+  "apiVersion": "ccp.io/v1beta1",
+  "kind": "ConnectionProfile",
+  "metadata": {
+    "name": "demo-connection"
+  },
+  "spec": {
+    "adapter": "mock",
+    "endpoint": "https://api.example.test",
+    "classification": "internal",
+    "allowedAccess": ["read"],
+    "allowedModes": ["connect"],
+    "defaultMode": "connect"
+  }
+}
+JSON
+
 ccp connection explain \
-  --resource-dir resources \
+  --resource-dir "$tmp_dir" \
   --name demo-connection \
   --access read \
   --mode connect \
   --operation "read external data" \
   --json
+
+rm -rf "$tmp_dir"
 ```
+
+Approval note: `ccp approval issue` requires an explicitly configured signer via `CCP_APPROVAL_SIGNING_KEY`, `CCP_APPROVAL_SIGNING_KEY_FILE`, or `CCP_APPROVAL_SIGNING_KEY_PATH`. CCP does not auto-create approval signers.
 
 ### 5. Inspect traces after execution
 
@@ -229,9 +253,9 @@ This project is usable, but still early.
 | Resource model and CLI contract | strong |
 | Governed execution and traces | strong |
 | Secret-safe execution | strong |
-| MCP trust and safe test posture | strong |
+| MCP trust and safe test posture | strong on macOS; observational elsewhere |
 | Full MCP invocation through core | still evolving |
-| Zero-config onboarding | still evolving |
+| Zero-config onboarding | improving, with inline examples for now |
 
 That is deliberate. The kernel is being built to be trustworthy first and flashy second. The second one gets more tweets, but the first one survives contact with reality.
 

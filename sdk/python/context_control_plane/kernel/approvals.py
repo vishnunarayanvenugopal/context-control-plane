@@ -4,7 +4,6 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,9 +35,12 @@ def _parse_timestamp(value: str) -> datetime:
 
 def _approval_key_path() -> Path:
     configured = str(os.environ.get(APPROVAL_SIGNING_KEY_PATH_ENV, "") or "").strip()
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".ccp-core" / "approval-signing.key"
+    if not configured:
+        raise ValueError(
+            "approval signing key is not configured; set CCP_APPROVAL_SIGNING_KEY, "
+            "CCP_APPROVAL_SIGNING_KEY_FILE, or CCP_APPROVAL_SIGNING_KEY_PATH before issuing or validating approval receipts"
+        )
+    return Path(configured).expanduser()
 
 
 def _canonical_json(value: Any) -> str:
@@ -60,17 +62,10 @@ def _signing_key(*, create_if_missing: bool) -> bytes:
     file_override = str(os.environ.get(APPROVAL_SIGNING_KEY_FILE_ENV, "") or "").strip()
     key_path = Path(file_override).expanduser() if file_override else _approval_key_path()
     if not key_path.exists():
-        if not create_if_missing:
-            raise ValueError(
-                "approval signing key is not configured; set CCP_APPROVAL_SIGNING_KEY, "
-                "CCP_APPROVAL_SIGNING_KEY_FILE, or create the default local signer"
-            )
-        key_path.parent.mkdir(parents=True, exist_ok=True)
-        key_path.write_text(secrets.token_hex(32), encoding="utf-8")
-        try:
-            os.chmod(key_path, 0o600)
-        except OSError:
-            pass
+        raise ValueError(
+            f"approval signing key file does not exist: {key_path}. "
+            "Provision the signer explicitly before issuing or validating approval receipts."
+        )
     key_value = key_path.read_text(encoding="utf-8").strip()
     if not key_value:
         raise ValueError(f"approval signing key file is empty: {key_path}")
@@ -85,7 +80,9 @@ def _approval_issuer() -> str:
         return "env-hmac"
     if str(os.environ.get(APPROVAL_SIGNING_KEY_FILE_ENV, "") or "").strip():
         return "file-hmac"
-    return "local-file-hmac"
+    if str(os.environ.get(APPROVAL_SIGNING_KEY_PATH_ENV, "") or "").strip():
+        return "path-hmac"
+    return ""
 
 
 def _receipt_signing_payload(receipt: "ApprovalReceiptRecord") -> Mapping[str, Any]:
