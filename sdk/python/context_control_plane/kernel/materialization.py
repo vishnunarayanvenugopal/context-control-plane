@@ -93,9 +93,10 @@ def read_materialized_secret_from_context(context: Mapping[str, object], secret_
     secret_files = context.get("secretFiles", {})
     if not isinstance(secret_files, Mapping):
         raise FileNotFoundError("materialization secret files are unavailable")
-    path = Path(str(secret_files.get(secret_ref, "") or ""))
-    if not path:
+    raw_path = str(secret_files.get(secret_ref, "") or "").strip()
+    if not raw_path:
         raise FileNotFoundError(f"materialized secret {secret_ref!r} was not found")
+    path = Path(raw_path)
     value = path.read_text(encoding="utf-8")
     if bool(context.get("cleanupOnRead", False)):
         try:

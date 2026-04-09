@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "sdk" / "python"))
 
 from context_control_plane.kernel import CORE_DEFAULT_API_VERSION  # noqa: E402
+from context_control_plane.kernel.materialization import read_materialized_secret_from_context  # noqa: E402
 from context_control_plane.surfaces import cli as discovery_cli  # noqa: E402
 
 
@@ -169,6 +170,12 @@ class HttpAdapterPhaseFifteenTests(unittest.TestCase):
         self.assertNotIn("super-secret-token-value", stdout)
         self.assertEqual(payload["result"]["output"]["statusCode"], 200)
         self.assertEqual(payload["result"]["output"]["json"]["authorizationSeen"], "[redacted]")
+
+    def test_missing_materialized_secret_raises_file_not_found(self) -> None:
+        with self.assertRaises(FileNotFoundError) as exc:
+            read_materialized_secret_from_context({"secretFiles": {}}, "missing")
+
+        self.assertIn("materialized secret 'missing' was not found", str(exc.exception))
 
     def test_materialized_http_auth_cleans_files_and_expired_leases(self) -> None:
         server, thread = self._start_server()

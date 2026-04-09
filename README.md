@@ -192,7 +192,7 @@ ccp connection explain \
 rm -rf "$tmp_dir"
 ```
 
-Approval note: `ccp approval issue` requires an explicitly configured signer via `CCP_APPROVAL_SIGNING_KEY`, `CCP_APPROVAL_SIGNING_KEY_FILE`, or `CCP_APPROVAL_SIGNING_KEY_PATH`. CCP does not auto-create approval signers.
+Approval note: `ccp approval issue` requires an explicitly configured signer via `CCP_APPROVAL_SIGNING_KEY`, `CCP_APPROVAL_SIGNING_KEY_FILE`, or `CCP_APPROVAL_SIGNING_KEY_PATH`. The same signer configuration must be present later when `ccp exec plan` or `ccp exec run` verifies an approval receipt. CCP does not auto-create approval signers.
 
 ### 5. Inspect traces after execution
 

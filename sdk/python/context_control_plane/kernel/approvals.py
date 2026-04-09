@@ -112,14 +112,16 @@ def _sign_receipt(receipt: "ApprovalReceiptRecord", *, create_if_missing: bool) 
     return hmac.new(key, payload, hashlib.sha256).hexdigest()
 
 
-def _verify_signature(receipt: "ApprovalReceiptRecord") -> bool:
+def _verify_signature(receipt: "ApprovalReceiptRecord") -> tuple[bool, str]:
     if not receipt.signature:
-        return False
+        return False, "approval receipt signature is missing"
     try:
         expected = _sign_receipt(receipt, create_if_missing=False)
-    except ValueError:
-        return False
-    return hmac.compare_digest(receipt.signature, expected)
+    except ValueError as exc:
+        return False, str(exc)
+    if not hmac.compare_digest(receipt.signature, expected):
+        return False, "approval receipt signature is invalid"
+    return True, "approval receipt signature is valid"
 
 
 @dataclass(frozen=True)
@@ -351,8 +353,9 @@ def validate_approval_receipt(
         return False, "approval receipt binding does not match the requested connection context"
     if not receipt.issuer:
         return False, "approval receipt issuer is missing"
-    if not _verify_signature(receipt):
-        return False, "approval receipt signature is invalid"
+    signature_valid, signature_reason = _verify_signature(receipt)
+    if not signature_valid:
+        return False, signature_reason
     if _parse_timestamp(receipt.expires_at) <= _now_utc():
         return False, "approval receipt has expired"
     return True, "approval receipt is valid"

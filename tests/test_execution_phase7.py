@@ -291,6 +291,62 @@ class ExecutionPhaseSevenTests(unittest.TestCase):
         self.assertEqual(payload["result"]["plan"]["approvalId"], payload["result"]["approvalReceipt"]["metadata"]["name"])
         self.assertEqual(payload["result"]["plan"]["credentialDelivery"], "ephemeral-handle")
 
+    def test_exec_plan_reports_missing_signer_when_verifying_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            connection_path = _write_connection_profile(
+                root,
+                name="tracker-writer",
+                classification="confidential",
+                allowed_access=["read", "write"],
+                allowed_modes=["connect", "materialize"],
+                approval={"requiredForAccess": ["write"]},
+            )
+            receipt_path = root / "receipt.json"
+
+            with self._approval_env():
+                issue_exit, issue_stdout, issue_stderr = _run_discovery(
+                    "approval",
+                    "issue",
+                    "--resource",
+                    str(connection_path),
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "comment on ticket",
+                    "--approved-by",
+                    "leader@example.com",
+                    "--output",
+                    str(receipt_path),
+                    "--json",
+                )
+            self.assertEqual(issue_exit, 0, msg=issue_stderr)
+
+            with self._approval_env_unset():
+                exit_code, stdout, stderr = _run_discovery(
+                    "exec",
+                    "plan",
+                    "--resource",
+                    str(connection_path),
+                    "--access",
+                    "write",
+                    "--mode",
+                    "materialize",
+                    "--operation",
+                    "comment on ticket",
+                    "--approval-receipt",
+                    str(receipt_path),
+                    "--json",
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stderr, "")
+        payload = json.loads(stdout)
+        self.assertEqual(payload["status"], "denied")
+        self.assertIn("approval signing key is not configured", payload["reason"])
+
     def test_exec_plan_rejects_mismatched_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
